@@ -1,0 +1,6 @@
+entity_name,entity_sprite,sprite_modifier,affinity,entity_type,movable,basehealth,strength
+player,@,[37m,friendly,player,TRUE,10,3
+goblin,G,[31m,hostile,npc,TRUE,5,2
+mage,M,[34m,friendly,npc,TRUE,100,50
+sword,t,[37m,neutral,item,FALSE,0,1
+trader,T,[32m,neutral,npc,TRUE,5,1
