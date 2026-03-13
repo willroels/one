@@ -82,7 +82,7 @@ exit /b
 :collision_check attacker target
 setlocal EnableDelayedExpansion
     set directions=north east south west
-    set north.x=!%~1.x!
+    set    north.x=!%~1.x!
     set /a north.y=!%~1.y!+1
     set /a east.x=!%~1.x!+1
     set    east.y=!%~1.y!
@@ -113,14 +113,8 @@ setlocal EnableDelayedExpansion
     endlocal & set %~2=!%~1!
 exit /b
 
-:main
-
-    call :csv_get_header_index messages.csv EN csv_index
-    for /F "skip=1 tokens=1,%csv_index% delims=," %%m in (messages.csv) do (
-        set %%m=%%n
-    )
-
-    for /F %%l in (entities.csv) do (
+:set_entity_attributes entities_csv
+    for /F %%l in (%~1) do (
         set entitity_attributes=%%l
         set entitity_attributes=!entitity_attributes:entity_name,=!
         goto :break
@@ -134,7 +128,7 @@ exit /b
         set /a index=!index!+1
     )
 
-    for /F "skip=1 tokens=1,* delims=," %%e in (entities.csv) do (
+    for /F "skip=1 tokens=1,* delims=," %%e in (%~1) do (
         set temporary=%%f
         set string="!temporary:,= !"
         call :strip_outer string
@@ -146,6 +140,21 @@ exit /b
             set /a index=!index!+1
         )
     )
+exit /b
+
+:main
+
+    set preferred_language=%~1
+    if "%preferred_language%"=="" (
+        set preferred_language=EN
+    )
+
+    call :csv_get_header_index messages.csv %preferred_language% csv_index
+    for /F "skip=1 tokens=1,%csv_index% delims=," %%m in (messages.csv) do (
+        set %%m=%%n
+    )
+
+    call :set_entity_attributes entities.csv
 
     set update_field=%ESC%[24;1H%ESC%[80X%ESC%[37m
     set min_x=0
@@ -193,12 +202,12 @@ REM 'key' variable to store the value of the user input
             echo %ESC%[!%%e.console_y!;!%%e.console_x!H%ESC%[37m!%%e.entity_sprite!
         )
     )
-
+REM    set key=h
 :event_loop
     echo.Starting the event loop >> log.txt
 REM this is the user input logic
     for /f %%a in ('key.exe') do (
-        set "key=%%a"
+        set key=%%a
     )
 
     if %key%==e (
@@ -268,7 +277,8 @@ REM this is the user input logic
                 set %%e.x_vel=0
                 set %%e.y_vel=0
             ) else (
-                if "!distance!" LSS "5" (
+                if !distance! LSS 5 (
+                    echo "distance less than 5" >> log.txt
                     if !dist_y_magnitude! LSS !dist_x_magnitude! (
                         set /a direction=!dist_x!/!dist_x_magnitude!
                         set %%e.y_vel=0
