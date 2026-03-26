@@ -14,7 +14,7 @@ setlocal EnableDelayedExpansion
 
     set "space=                                                                                "
 REM Enable virtual terminal sequences
-    call set_console_mode.exe
+    call binutils\set_console_mode.exe
 
 REM Saves the ESC character value (hex 0x1B) to the variable ESC
 REM To be used later to construct VT commands using 'echo'
@@ -142,36 +142,76 @@ exit /b
     )
 exit /b
 
+:load_level
+    set level_render_y=19
+    for /F "tokens=*" %%a in (levels\level%curr_level%_rendered.txt) do (
+        set "current_level[!level_render_y!]=%%a"
+        set /a level_render_y=!level_render_y!-1
+    )
+
+    set level_render_y=19
+    for /F %%a in (levels\level%curr_level%_walkable.txt) do (
+        set is_walkable[!level_render_y!]=%%a
+        set /a level_render_y=!level_render_y!-1
+    )
+
+goto :eof
+
+:spawn_in_walkable_location spawnable_coord
+setlocal
+    call :set_random y_val 0 19
+    call :set_random x_val 0 79
+
+    set /a "y_iter_max = %y_val% + 19"
+    for /L %%y in (%y_val%, 1, %y_iter_max%) do (
+        set /a "check_y = %%y %% 20"
+        for %%c in ("is_walkable[!check_y!]") do (
+            if "!%%~c:~%x_val%,1!" EQU "1" goto :spawn_return
+        )
+    )
+    
+:spawn_return
+endlocal & set %~1="%x_val%,%check_y%"
+goto :eof
+
 :main
+    
+    set curr_level=1
+    if exist levels\level%curr_level%* (
+        call :load_level %curr_level%
+    ) else (
+        start /b cmd /c perlin-like-2d.bat "width = 80" "height = 20" "octaves = 3" "level = 1" "walkable_threshold = 125"
+    )
+
 
     set preferred_language=%~1
     if "%preferred_language%"=="" (
         set preferred_language=EN
     )
 
-    call :csv_get_header_index messages.csv %preferred_language% csv_index
-    for /F "skip=1 tokens=1,%csv_index% delims=," %%m in (messages.csv) do (
+    call :csv_get_header_index config\messages.csv %preferred_language% csv_index
+    for /F "skip=1 tokens=1,%csv_index% delims=," %%m in (config\messages.csv) do (
         set %%m=%%n
     )
 
-    call :set_entity_attributes entities.csv
+    call :set_entity_attributes config\entities.csv
 
     set update_field=%ESC%[24;1H%ESC%[80X%ESC%[37m
-    set min_x=0
-    set min_y=0
-    set max_x=79
-    set max_y=21
+    set min_x=-1
+    set min_y=-1
+    set max_x=80
+    set max_y=20
+
+
+REM this is the render loop
+    for /L %%y in (19, -1, 0) do (
+        set "line=!current_level[%%y]:~0,80!"
+        @echo.!line!
+    )
 
     echo %hide_cursor%%disable_blink%
 
-REM this is the render loop
-    echo %border%
-    for /L %%y in (2, 1, 21) do (
-        echo / %space:~1,76% /
-    )
-    echo %border%
-
-    echo [h]=!left! [j]=!down! [k]=!up! [l]=!right! [e]=!exit!
+    echo|set /p=%update_field%[h]=!left! [j]=!down! [k]=!up! [l]=!right! [e]=!exit!
     if "%debug%"=="true" (
         set DEBUG=
     ) else (
@@ -185,9 +225,13 @@ REM 'key' variable to store the value of the user input
 
     set npcs=goblin,mage,trader
     
-    for %%e in (%entities:,= %) do (
-        call :set_random %%e.x 10 60
-        call :set_random %%e.y 2 18
+    for %%e in (%entities%) do (
+        call :spawn_in_walkable_location walkable_coord
+
+        for /F "tokens=1,2 delims=," %%x in (!walkable_coord!) do (
+            set %%e.x=%%x
+            set %%e.y=%%y
+        )
 
         set %%e.x_vel=0
         set %%e.y_vel=0
@@ -195,18 +239,18 @@ REM 'key' variable to store the value of the user input
         set %%e.health=!%%e.basehealth!
         
         set /a %%e.console_x=!%%e.x! + 1
-        set /a %%e.console_y=22 - !%%e.y!
+        set /a %%e.console_y=20 - !%%e.y!
         if !%%e.sprite_modifier! NEQ """""" (
             echo %ESC%[!%%e.console_y!;!%%e.console_x!H%ESC%!%%e.sprite_modifier!!%%e.entity_sprite!
         )else (
             echo %ESC%[!%%e.console_y!;!%%e.console_x!H%ESC%[37m!%%e.entity_sprite!
         )
     )
-REM    set key=h
+
 :event_loop
     echo.Starting the event loop >> log.txt
 REM this is the user input logic
-    for /f %%a in ('key.exe') do (
+    for /f %%a in ('binutils\key.exe') do (
         set key=%%a
     )
 
@@ -257,7 +301,7 @@ REM this is the user input logic
         ) else (
             echo.Erasing entity %%e at [!%%e.x!,!%%e.y!] >> log.txt
             set /a %%e.console_x=!%%e.x! + 1
-            set /a %%e.console_y=22 - !%%e.y!
+            set /a "%%e.console_y=20 - !%%e.y!"
             echo.%ESC%[!%%e.console_y!;!%%e.console_x!H 
             set npcs=!npcs:%%e=!
             set entities=!entities:%%e=!
@@ -312,21 +356,22 @@ REM this is the user input logic
         set /a new_x=!%%e.x! + !%%e.x_vel!
         set /a new_y=!%%e.y! + !%%e.y_vel!
 
-        echo %ESC%[!%%e.console_y!;!%%e.console_x!H 
+        for /F "tokens=1,2 delims=," %%x in ("!new_x!,!new_y!") do (
+            if "!is_walkable[%%y]:~%%x,1!"=="1" (
+                REM x and y have to be positive
+                if %%x GTR -1 (
+                    set %%e.x=%%x
+                )
 
-        if !new_x! GTR %min_x% (
-            if !new_x! LSS %max_x% (
-                set %%e.x=!new_x!
+                if %%y GTR -1 (
+                    set %%e.y=%%y
+                )
             )
         )
 
-        if !new_y! GTR %min_y% (
-            if !new_y! LSS %max_y% (
-                set %%e.y=!new_y!
-            )
-        )
+        echo %ESC%[!%%e.console_y!;!%%e.console_x!H%ESC%[37m.
         set /a %%e.console_x=!%%e.x! + 1
-        set /a %%e.console_y=22 - !%%e.y!
+        set /a "%%e.console_y=20 - !%%e.y!"
         if !%%e.sprite_modifier! NEQ """""" (
             echo %ESC%[!%%e.console_y!;!%%e.console_x!H%ESC%!%%e.sprite_modifier!!%%e.entity_sprite!
         )else (
@@ -337,7 +382,7 @@ REM this is the user input logic
         set %%e.y_vel=0
     )
 
-    echo|set /p=%update_field%!update_message!%DEBUG%[%player.x%,%player.y%]
+    echo|set /p=%update_field%!update_message!
     set update_message=
 
     if !player.health!==0 (

@@ -113,8 +113,8 @@ goto :eof
                 set walkable[%%y]=!walkable[%%y]!0
             )
         )
-        @echo.!world[%%y]!>>level!level!_rendered.txt
-        @echo.!walkable[%%y]!>>level!level!_walkable.txt
+        @echo.!world[%%y]!>>levels\level!level!_rendered.txt
+        @echo.!walkable[%%y]!>>levels\level!level!_walkable.txt
     )
 
 endlocal
